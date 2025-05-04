@@ -55,9 +55,12 @@ def detect_objects(img):
     )
 
     areas = []
+    bb = []
 
     for cnt in contours:
         areas.append(cv2.contourArea(cnt))
+        x, y, w, h = cv2.boundingRect(cnt)
+        bb.append([x, y, x+w, y+h])
 
     def get_sorted_indices(data):
         return [i[0] for i in sorted(enumerate(data), key=lambda x: x[1], reverse=True)]
@@ -65,7 +68,7 @@ def detect_objects(img):
     sorted_indices = get_sorted_indices(areas)
 
     indices = np.expand_dims(np.arange(hierarchy[0].shape[0]), 1)
-    hierarchy_area = np.concatenate((indices, hierarchy[0], np.expand_dims(areas, 1)), axis=1)
+    hierarchy_area = np.concatenate((indices, hierarchy[0], np.expand_dims(areas, 1), np.array(bb)), axis=1)
 
     return sorted_indices, contours, hierarchy_area
 
