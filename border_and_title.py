@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import torch
 from doctr.models import ocr_predictor
+from scipy.spatial import distance_matrix
 
 
 ocr_model = ocr_predictor('db_resnet50', 'crnn_vgg16_bn', pretrained=True)
@@ -192,13 +193,6 @@ def detect_text_tables(img, words, mask):
     return contours
 
 
-def detect_borders(contours, sorted_indices):
-    bb_1 = cv2.boundingRect(contours[sorted_indices[0]])
-    bb_2 = cv2.boundingRect(contours[sorted_indices[1]])
-
-    return bb_1, bb_2
-
-
 def table_content_score(bb, words):
     ratio = 1
     try:
@@ -223,3 +217,70 @@ def table_content_score(bb, words):
         ratio += 0.2
 
     return ratio
+
+
+def detect_points(points, threshold=10, close_n=3):
+    try:
+        dists = distance_matrix(points, points)
+        close_counts = (dists < threshold).sum(axis=1) - 1
+        point_means = points.mean(axis=1)
+        point_mean = point_means.mean()
+
+        point_1 = points.loc[(point_means < point_mean - (point_mean/2)) & (close_counts >= close_n)].values
+        point_1 = (point_1[:, 0].min(), point_1[:, 1].max())
+
+        point_2 = points.loc[(point_means > point_mean + (point_mean/2)) & (close_counts >= close_n)].values
+        point_2 = (point_2[:, 0].min(), point_2[:, 1].max())
+    except ValueError:
+        point_1, point_2 = None, None
+
+    return point_1, point_2
+
+
+def detect_borders_with_contours(contours, sorted_indices):
+    bb_1 = cv2.boundingRect(contours[sorted_indices[0]])
+    bb_2 = cv2.boundingRect(contours[sorted_indices[1]])
+    x, y, w, h = bb_1
+    bb_1 = (x, y), (x + w, y + h)
+    x, y, w, h = bb_2
+    bb_2 = (x, y), (x + w, y + h)
+
+    return bb_1, bb_2
+
+
+def calculate_area(bb):
+    p1, p2 = bb
+
+    h = p1[0] - p2[0]
+    w = p1[1] - p2[1]
+
+    return h * w
+
+
+def detect_borders(contours, sorted_indices, words):
+    cbb_1, cbb_2 = detect_borders_with_contours(contours, sorted_indices)
+
+    point_y_1, point_y_2 = detect_points(words.loc[words.value.isin(["1", "2", "3", "4", "5", "6", "7", "8"])][["y1", "y2"]].astype(int))
+    point_x_1, point_x_2 = detect_points(words.loc[words.value.isin(["A", "B", "C", "D", "F", "G", "H", "I"])][["x1", "x2"]].astype(int))
+
+
+    if point_x_1 is None or point_y_1 is None or point_x_2 is None or point_y_2 is None:
+        bb_1 = cbb_1
+        bb_2 = cbb_2
+    else:
+        bb_1 = (point_x_1[0], point_y_1[0]), (point_x_2[1], point_y_2[1])
+        bb_2 = (point_x_1[1], point_y_1[1]), (point_x_2[0], point_y_2[0])
+
+    a_bb_1 = calculate_area(bb_1)
+    a_bb_2 = calculate_area(bb_2)
+
+    if a_bb_1 * 0.85 > a_bb_2:
+        bb_2 = (
+            int(bb_1[0][0] + 30),
+            int(bb_1[0][1] + 30)
+        ), (
+            int(bb_1[1][0] - 30),
+            int(bb_1[1][1] - 30)
+        )
+
+    return bb_1, bb_2
