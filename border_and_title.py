@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 import torch
 from doctr.models import ocr_predictor
-from scoring import detect_objects
 
 
 ocr_model = ocr_predictor('db_resnet50', 'crnn_vgg16_bn', pretrained=True)
@@ -27,13 +26,6 @@ def detect_probable_title_sections(img, return_states=False):
     vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, image_height // scale))
     vertically_opened = cv2.morphologyEx(img_bin, cv2.MORPH_OPEN, vertical_kernel)
     vertical_lines = cv2.dilate(vertically_opened, cv2.getStructuringElement(cv2.MORPH_RECT, (2, 40)))
-
-    # lines_5 = cv2.HoughLinesP(vertical_lines, 1, np.pi / 180, 15, np.array([]), int((image_height * 5) / 100), 10)
-    # if lines_5 is not None:
-    #     for line in lines_5:
-    #         for x1, y1, x2, y2 in line:
-    #             if y1 > int((image_height * 80) / 100) and y2 > int((image_height * 80) / 100):
-    #                 cv2.line(vertical_lines, (x1, y1), (x2, y2), (255, 255, 255), 3)
 
     horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (image_width // scale, 1))
     horizontally_opened = cv2.morphologyEx(img_bin, cv2.MORPH_OPEN, horizontal_kernel)
@@ -155,7 +147,7 @@ def get_closest_line(row, ref_lines, threshold=50):
     return None
 
 
-def detect_text_tables(img, ocr_result, mask):
+def detect_text_tables(img, words, mask):
     im_h, im_w, _ = img.shape
     img_comp = img.copy()
 
@@ -175,7 +167,6 @@ def detect_text_tables(img, ocr_result, mask):
     vertical_lines = np.array(vertical_lines)
 
     new_mask = np.zeros_like(img_comp)
-    words = process_text(ocr_result, im_h, im_w)
 
     for idx, row in words.iterrows():
         bx1, by1, bx2, by2 = row[["x1", "y1", "x2", "y2"]].astype(int)
@@ -184,10 +175,8 @@ def detect_text_tables(img, ocr_result, mask):
             closest = find_closest_lines(bx1, by1, bx2, by2, horizontal_lines, vertical_lines, t_dist=200)
             for c in closest:
                 x1, y1, x2, y2 = c
-                cv2.line(img_comp, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 cv2.line(new_mask, (x1, y1), (x2, y2), (255, 255, 255), 2)
 
-            cv2.rectangle(img_comp, (bx1, by1), (bx2, by2), (0, 0, 255), 5)
             cv2.rectangle(new_mask, (bx1, by1), (bx2, by2), (255, 255, 255), cv2.FILLED)
         except ValueError:
             pass
@@ -208,3 +197,29 @@ def detect_borders(contours, sorted_indices):
     bb_2 = cv2.boundingRect(contours[sorted_indices[1]])
 
     return bb_1, bb_2
+
+
+def table_content_score(bb, words):
+    ratio = 1
+    try:
+        (cx1, cy1), (cx2, cy2) = bb
+        words_in_bb = words.loc[(words.x1 > cx1) & (words.x2 < cx2) & (words.y1 > cy1) & (words.y2 < cy2)]
+        sentence = "".join(words_in_bb.value.tolist())
+        chars = sum(c.isalpha() for c in sentence)
+        digits = sum(c.isdigit() for c in sentence)
+        ratio = digits / chars
+
+        if words_in_bb.shape[0] < 2 and ratio < 1:
+            ratio += 0.2
+        elif words_in_bb.shape[0] < 3 and ratio < 0.8:
+            ratio += 0.2
+        elif (len(sentence) / words_in_bb.shape[0]) < 2:
+            ratio += 0.2
+        elif digits == 0:
+            ratio -= 0.5
+
+        return ratio
+    except ZeroDivisionError:
+        ratio += 0.2
+
+    return ratio
