@@ -60,12 +60,7 @@ def detect_probable_title_sections(img, return_states=False):
             decide_inner(lines_90_v[-2], lines_90_v[-1])
         ])
 
-    # inner_border_lines = [
-    #     decide_inner(lines_90_h[0], lines_90_h[1]),
-    #     decide_inner(lines_90_h[-1], lines_90_h[-2]),
-    #     decide_inner(lines_90_v[0], lines_90_v[1]),
-    #     decide_inner(lines_90_v[-2], lines_90_v[-1])
-    # ]
+    inner_border_lines = remove_similar_lines(np.array(inner_border_lines))
 
     lines_70 = cv2.HoughLinesP(horizontal_lines, 1, np.pi / 180, 15, np.array([]), int((image_width * 95) / 100), 50)
     line_90 = None
@@ -353,3 +348,94 @@ def remove_similar_lines(lines):
         keep.append(current_line)
 
     return np.array(keep)
+
+
+def get_boundary(border_1, border_2, inner_border_lines):
+    (x1, y1), (x2, y2) = border_1
+    border_1_lines = [
+        [x1, y2, x2, y2],  # Bottom
+        [x1, y1, x2, y1],  # Top
+        [x2, y2, x2, y1],  # Right
+        [x1, y2, x1, y1],  # Left
+    ]
+
+    (x1, y1), (x2, y2) = border_2
+    border_2_lines = [
+        [x1, y2, x2, y2],  # Bottom
+        [x1, y1, x2, y1],  # Top
+        [x2, y2, x2, y1],  # Right
+        [x1, y2, x1, y1],  # Left
+    ]
+
+    all_lines = [
+        border_2_lines,
+        border_1_lines
+    ]
+    if len(inner_border_lines) == 4:
+        all_lines.append(inner_border_lines)
+
+    boundary = [[0, 0], [0, 0]]
+    for i, line in enumerate(zip(*all_lines)):
+        line = np.array(line)
+
+        if i == 0:
+            x1, y1, x2, y2 = line[:, 0].min(), line[:, 1].min(), line[:, 2].max(), line[:, 3].min()
+            boundary[0][1] = y1
+        elif i == 1:
+            x1, y1, x2, y2 = line[:, 0].min(), line[:, 1].max(), line[:, 2].max(), line[:, 3].max()
+            boundary[1][1] = y2
+        elif i == 2:
+            x1, y1, x2, y2 = line[:, 0].min(), line[:, 1].max(), line[:, 2].min(), line[:, 3].min()
+            boundary[1][0] = x2
+        elif i == 3:
+            x1, y1, x2, y2 = line[:, 0].max(), line[:, 1].max(), line[:, 2].max(), line[:, 3].min()
+            boundary[0][0] = x1
+
+    return boundary
+
+
+def get_title_boundary(boundary, line_90, title_contours, words, im_h):
+    bb = []
+    for cnt in title_contours:
+        x, y, w, h = cv2.boundingRect(cnt)
+        x1 = x + w
+        y1 = y + h
+        aspect_ratio = w / float(h)
+        area = w * h
+
+        if area > 7000 and 1.3 < aspect_ratio < 10:
+            ratio = table_content_score(((x, y), (x1, y1)), words)
+
+            if ratio <= 1:
+                if y > int((im_h * 70) / 100) and y + h > int((im_h * 93) / 100):
+                    bb.append((x, y, x1, y1))
+
+                elif y > int((im_h * 80) / 100) and y1 > int((im_h * 90) / 100):
+                    bb.append((x, y, x1, y + h))
+
+    title_boundary = [[0, 0], [0, 0]]
+
+    try:
+        bb = np.array(bb)
+
+        if line_90 is not None:
+            x1, y1, x2, y2 = line_90
+            x1 = boundary[0][0]
+            x2 = boundary[1][0]
+        else:
+            x2 = bb[:, 2].max()
+            x1 = bb[:, 0].min()
+            y1 = bb[:, 1].min()
+
+            if abs(boundary[1][0] - bb[:, 2].max()) < 50:
+                x2 = boundary[1][0]
+
+            if abs(boundary[0][0] - bb[:, 0].min()) < 50:
+                x1 = boundary[0][0]
+
+        y2 = max(boundary[0][1], boundary[1][1])
+        title_boundary = [[x1, y1], [x2, y2]]
+    except IndexError:
+        pass
+
+    return title_boundary
