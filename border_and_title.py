@@ -18,6 +18,16 @@ def is_number(s):
         return False
 
 
+def decide_inner(line_1, line_2):
+    x1, y1, x2, y2 = abs(line_1 - line_2)
+    if y1 > 100:
+        x1, y1, x2, y2 = line_1
+    else:
+        x1, y1, x2, y2 = line_2
+
+    return x1, y1, x2, y2
+
+
 def detect_probable_title_sections(img, return_states=False):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     _, img_bin = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
@@ -31,6 +41,31 @@ def detect_probable_title_sections(img, return_states=False):
     horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (image_width // scale, 1))
     horizontally_opened = cv2.morphologyEx(img_bin, cv2.MORPH_OPEN, horizontal_kernel)
     horizontal_lines = cv2.dilate(horizontally_opened, cv2.getStructuringElement(cv2.MORPH_RECT, (40, 2)))
+
+    lines_90_h = cv2.HoughLinesP(horizontal_lines, 1, np.pi / 180, 15, np.array([]), int((image_width * 90) / 100), 50)
+    lines_90_v = cv2.HoughLinesP(vertical_lines, 1, np.pi / 180, 15, np.array([]), int((image_height * 90) / 100), 50)
+
+    inner_border_lines = []
+    if lines_90_h is not None and len(lines_90_h) > 1:
+        lines_90_h = remove_similar_lines(lines_90_h)
+        inner_border_lines.extend([
+            decide_inner(lines_90_h[0], lines_90_h[1]),
+            decide_inner(lines_90_h[-1], lines_90_h[-2]),
+        ])
+
+    if  lines_90_v is not None and len(lines_90_v) > 1:
+        lines_90_v = remove_similar_lines(lines_90_v)
+        inner_border_lines.extend([
+            decide_inner(lines_90_v[0], lines_90_v[1]),
+            decide_inner(lines_90_v[-2], lines_90_v[-1])
+        ])
+
+    # inner_border_lines = [
+    #     decide_inner(lines_90_h[0], lines_90_h[1]),
+    #     decide_inner(lines_90_h[-1], lines_90_h[-2]),
+    #     decide_inner(lines_90_v[0], lines_90_v[1]),
+    #     decide_inner(lines_90_v[-2], lines_90_v[-1])
+    # ]
 
     lines_70 = cv2.HoughLinesP(horizontal_lines, 1, np.pi / 180, 15, np.array([]), int((image_width * 95) / 100), 50)
     line_90 = None
@@ -73,7 +108,14 @@ def detect_probable_title_sections(img, return_states=False):
     contours, hierarchy = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     if return_states:
-        return contours, line_90, ocr_result, mask_comp, mask
+        return contours, line_90, dict(
+            ocr_result=ocr_result,
+            mask_comp=mask_comp,
+            mask=mask,
+            lines_90_h=lines_90_h,
+            lines_90_v=lines_90_v,
+            inner_border_lines=inner_border_lines
+        )
 
     return contours, line_90
 
@@ -284,3 +326,30 @@ def detect_borders(contours, sorted_indices, words):
         )
 
     return bb_1, bb_2
+
+
+def remove_similar_lines(lines):
+    lines = lines.reshape(-1, 4)
+    threshold = 2
+
+    keep = []
+    visited = np.zeros(len(lines), dtype=bool)
+
+    for i in range(len(lines)):
+        if visited[i]:
+            continue
+
+        current_line = lines[i]
+        visited[i] = True
+
+        for j in range(i+1, len(lines)):
+            if visited[j]:
+                continue
+            other_line = lines[j]
+
+            if np.all(np.abs(current_line - other_line) <= threshold):
+                visited[j] = True
+
+        keep.append(current_line)
+
+    return np.array(keep)
