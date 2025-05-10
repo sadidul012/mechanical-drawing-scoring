@@ -1,3 +1,4 @@
+from scoring import detect_objects
 from title_block import *
 from scipy.spatial import distance_matrix
 
@@ -136,3 +137,99 @@ def find_connected_lines_recursive(target_line, lines, tolerance=5):
     return list(visited)
 
 
+def detect_intersection_with_borders(img, boundary, title_boundary):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+    lines = cv2.HoughLinesP(
+        edges,
+        rho=1,
+        theta=np.pi / 180,
+        threshold=100,
+        minLineLength=50,
+        maxLineGap=10
+    )
+    lines = remove_similar_lines(lines)
+
+    tolerance = 10
+    (x1, y1), (x2, y2) = boundary.copy()
+    y2 += tolerance
+    y1 -= tolerance
+    x2 -= tolerance
+    x1 += tolerance
+
+    boundary_lines = [
+        [x1, y2, x2, y2],  # Top
+        [x1, y1, x2, y1],  # Bottom
+        [x2, y2, x2, y1],  # Right
+        [x1, y2, x1, y1],  # Left
+    ]
+    drawings = lines.copy()
+    (x1, y1), (x2, y2) = boundary
+    left = min(x1, x2)
+    right = max(x1, x2)
+    top = min(y1, y2)
+    bottom = max(y1, y2)
+
+    drawings = drawings[
+        ~((drawings[:, 1] <= top + tolerance) & (drawings[:, 3] <= top + tolerance))
+        & ~((drawings[:, 1] >= bottom - tolerance) & (drawings[:, 3] >= bottom - tolerance))
+        & ~((drawings[:, 0] <= left + tolerance) & (drawings[:, 2] <= left + tolerance))
+        & ~((drawings[:, 0] > right - tolerance) & (drawings[:, 2] > right - tolerance))
+    ]
+    lines = drawings.copy()
+    drawings = lines.copy()
+    (x1, y1), (x2, y2) = title_boundary
+    left = min(x1, x2)
+    right = max(x1, x2)
+    top = min(y1, y2)
+    bottom = max(y1, y2)
+
+    boundary_title_block_lines = [
+        [left, top, right, top],  # Top
+        [left, bottom, left, top],  # Left
+        [right, bottom, right, top],  # Right
+        # [left, bottom, right, bottom],  # Bottom
+    ]
+
+    drawings = drawings[
+        ~((drawings[:, 1] >= top - tolerance) & (drawings[:, 3] >= top - tolerance) & (drawings[:, 0] >= left - tolerance) & (drawings[:, 2] >= left - tolerance))
+    ]
+    lines = drawings.copy()
+
+    intersected_lines = []
+    top_intersected = find_intersected_lines(boundary_lines[0], lines)
+    top_intersected = lines[top_intersected]
+    intersected_lines.extend(top_intersected)
+
+    bottom_intersected = find_intersected_lines(boundary_lines[1], lines)
+    bottom_intersected = lines[bottom_intersected]
+    intersected_lines.extend(bottom_intersected)
+
+    right_intersected = find_intersected_lines(boundary_lines[2], lines)
+    right_intersected = lines[right_intersected]
+    intersected_lines.extend(right_intersected)
+
+    left_intersected = find_intersected_lines(boundary_lines[3], lines)
+    left_intersected = lines[left_intersected]
+    intersected_lines.extend(left_intersected)
+
+    title_top_intersected = find_intersected_lines(boundary_title_block_lines[0], lines)
+    title_top_intersected = lines[title_top_intersected]
+    intersected_lines.extend(title_top_intersected)
+
+    title_left_intersected = find_intersected_lines(boundary_title_block_lines[1], lines)
+    title_left_intersected = lines[title_left_intersected]
+    intersected_lines.extend(title_left_intersected)
+
+    title_right_intersected = find_intersected_lines(boundary_title_block_lines[2], lines)
+    title_right_intersected = lines[title_right_intersected]
+    intersected_lines.extend(title_right_intersected)
+
+    intersected_lines = np.array(intersected_lines)
+    connected_lines = []
+    for intersected_line in intersected_lines:
+        x1, y1, x2, y2 = intersected_line
+        connected = find_connected_lines_recursive([x1, y1, x2, y2], lines)
+        connected_lines.extend(connected)
+
+    return lines[list(set(connected_lines))]
