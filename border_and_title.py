@@ -137,7 +137,7 @@ def find_connected_lines_recursive(target_line, lines, tolerance=5):
     return list(visited)
 
 
-def detect_intersection_with_borders(img, boundary, title_boundary):
+def detect_intersection_with_borders(img, boundary, title_boundary, return_states=False):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, 50, 150, apertureSize=3)
     lines = cv2.HoughLinesP(
@@ -232,4 +232,24 @@ def detect_intersection_with_borders(img, boundary, title_boundary):
         connected = find_connected_lines_recursive([x1, y1, x2, y2], lines)
         connected_lines.extend(connected)
 
+    if return_states:
+        return lines[list(set(connected_lines))], boundary_lines, boundary_title_block_lines
+
     return lines[list(set(connected_lines))]
+
+
+def detect_intersected_texts(words, boundary_lines, boundary_title_block_lines):
+    words_copy = words.copy()
+
+    words_copy = words_copy.loc[
+        (words.x1 < boundary_title_block_lines[1][0])  # left
+        | (words.y1 < boundary_title_block_lines[0][1])  # left
+        ]
+    words_copy = words_copy.loc[
+        (words.x1 < boundary_lines[3][0]) & (words.x2 > boundary_lines[3][2])  # left
+        | (words.x1 < boundary_lines[2][0]) & (words.x2 > boundary_lines[2][2])  # right
+        | (words.y1 < boundary_lines[1][1]) & (words.y2 > boundary_lines[1][3])  # top
+        | (words.y1 < boundary_lines[0][1]) & (words.y2 > boundary_lines[0][3])  # bottom
+    ]
+
+    return words_copy
