@@ -1,5 +1,9 @@
 import numpy as np
 from scipy.spatial import distance
+import random
+
+
+random.seed(42)
 
 
 def is_number(s):
@@ -74,3 +78,48 @@ def get_closest_line(row, ref_lines, threshold=50):
         pass
 
     return None
+
+
+def random_rgb_color():
+  """Generates a random RGB color as a tuple of integers (0-255)."""
+  r = random.randint(0, 255)
+  g = random.randint(0, 255)
+  b = random.randint(0, 255)
+
+  return r, g, b
+
+
+def calculate_total_length(lines):
+    lines = np.array(lines)
+    x1, y1, x2, y2 = lines[:, 0], lines[:, 1], lines[:, 2], lines[:, 3]
+
+    lengths = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+
+    total_length = lengths.sum()
+    return total_length
+
+
+def ccw(A, B, C):
+    return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0])
+
+
+def do_intersect(line1, line2):
+    (x1, y1, x2, y2) = line1
+    (x3, y3, x4, y4) = line2
+
+    A = (x1, y1)
+    B = (x2, y2)
+    C = (x3, y3)
+    D = (x4, y4)
+
+    return (ccw(A, C, D) != ccw(B, C, D)) and (ccw(A, B, C) != ccw(A, B, D))
+
+
+def find_intersected_lines(target_line, lines):
+    intersected_indices = []
+
+    for idx, line in enumerate(lines):
+        if do_intersect(target_line, line):
+            intersected_indices.append(idx)
+
+    return intersected_indices

@@ -102,3 +102,37 @@ def get_boundary(border_1, border_2, inner_border_lines):
             boundary[0][0] = x1
 
     return boundary
+
+
+def find_connected_lines_recursive(target_line, lines, tolerance=5):
+    def is_connected(line_a, line_b):
+        xa1, ya1, xa2, ya2 = line_a
+        xb1, yb1, xb2, yb2 = line_b
+        endpoints_a = [(xa1, ya1), (xa2, ya2)]
+        endpoints_b = [(xb1, yb1), (xb2, yb2)]
+        for (ax, ay) in endpoints_a:
+            for (bx, by) in endpoints_b:
+                if abs(ax - bx) <= tolerance and abs(ay - by) <= tolerance:
+                    return True
+        return False
+
+    visited = set()
+    to_visit = []
+
+    for idx, line in enumerate(lines):
+        if is_connected(target_line, line):
+            to_visit.append(idx)
+            visited.add(idx)
+
+    while to_visit:
+        current_idx = to_visit.pop()
+        current_line = lines[current_idx]
+
+        for idx, line in enumerate(lines):
+            if idx not in visited and is_connected(current_line, line):
+                to_visit.append(idx)
+                visited.add(idx)
+
+    return list(visited)
+
+
