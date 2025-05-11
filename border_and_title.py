@@ -197,35 +197,44 @@ def detect_intersection_with_borders(img, boundary, title_boundary, return_state
     lines = drawings.copy()
 
     intersected_lines = []
-    top_intersected = find_intersected_lines(boundary_lines[0], lines)
+    intersected_points = []
+    top_intersected, intersected_at = find_intersected_lines(boundary_lines[0], lines)
     top_intersected = lines[top_intersected]
     intersected_lines.extend(top_intersected)
+    intersected_points.extend(intersected_at)
 
-    bottom_intersected = find_intersected_lines(boundary_lines[1], lines)
+    bottom_intersected, intersected_at = find_intersected_lines(boundary_lines[1], lines)
     bottom_intersected = lines[bottom_intersected]
     intersected_lines.extend(bottom_intersected)
+    intersected_points.extend(intersected_at)
 
-    right_intersected = find_intersected_lines(boundary_lines[2], lines)
+    right_intersected, intersected_at = find_intersected_lines(boundary_lines[2], lines)
     right_intersected = lines[right_intersected]
     intersected_lines.extend(right_intersected)
+    intersected_points.extend(intersected_at)
 
-    left_intersected = find_intersected_lines(boundary_lines[3], lines)
+    left_intersected, intersected_at = find_intersected_lines(boundary_lines[3], lines)
     left_intersected = lines[left_intersected]
     intersected_lines.extend(left_intersected)
+    intersected_points.extend(intersected_at)
 
-    title_top_intersected = find_intersected_lines(boundary_title_block_lines[0], lines)
+    title_top_intersected, intersected_at = find_intersected_lines(boundary_title_block_lines[0], lines)
     title_top_intersected = lines[title_top_intersected]
     intersected_lines.extend(title_top_intersected)
+    intersected_points.extend(intersected_at)
 
-    title_left_intersected = find_intersected_lines(boundary_title_block_lines[1], lines)
+    title_left_intersected, intersected_at = find_intersected_lines(boundary_title_block_lines[1], lines)
     title_left_intersected = lines[title_left_intersected]
     intersected_lines.extend(title_left_intersected)
+    intersected_points.extend(intersected_at)
 
-    title_right_intersected = find_intersected_lines(boundary_title_block_lines[2], lines)
+    title_right_intersected, intersected_at = find_intersected_lines(boundary_title_block_lines[2], lines)
     title_right_intersected = lines[title_right_intersected]
     intersected_lines.extend(title_right_intersected)
+    intersected_points.extend(intersected_at)
 
     intersected_lines = np.array(intersected_lines)
+    intersected_points = np.array(intersected_points)
     connected_lines = []
     for intersected_line in intersected_lines:
         x1, y1, x2, y2 = intersected_line
@@ -233,7 +242,7 @@ def detect_intersection_with_borders(img, boundary, title_boundary, return_state
         connected_lines.extend(connected)
 
     if return_states:
-        return lines[list(set(connected_lines))], boundary_lines, boundary_title_block_lines
+        return lines[list(set(connected_lines))], boundary_lines, boundary_title_block_lines, intersected_points
 
     return lines[list(set(connected_lines))]
 

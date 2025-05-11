@@ -50,7 +50,6 @@ def calculate_area(bb):
     return h * w
 
 
-
 def find_closest_lines(bx1, by1, bx2, by2, horizontal_lines, vertical_lines, t_dist=200):
     top = horizontal_lines[(horizontal_lines[:, 1] < by1) & (horizontal_lines[:, 1] > (by1 - t_dist)) & (horizontal_lines[:, 0] < bx1) & (horizontal_lines[:, 2] > bx2)]
     top = top[top[:, 0].argmin()]
@@ -115,11 +114,42 @@ def do_intersect(line1, line2):
     return (ccw(A, C, D) != ccw(B, C, D)) and (ccw(A, B, C) != ccw(A, B, D))
 
 
+def find_intersection_point(line1, line2):
+    x1, y1, x2, y2 = line1
+    x3, y3, x4, y4 = line2
+
+    a1 = y2 - y1
+    b1 = x1 - x2
+    c1 = a1 * x1 + b1 * y1
+
+    a2 = y4 - y3
+    b2 = x3 - x4
+    c2 = a2 * x3 + b2 * y3
+
+    determinant = a1 * b2 - a2 * b1
+
+    if determinant == 0:
+        return None
+
+    x = (b2 * c1 - b1 * c2) / determinant
+    y = (a1 * c2 - a2 * c1) / determinant
+
+    if (min(x1, x2) - 1e-6 <= x <= max(x1, x2) + 1e-6 and
+        min(y1, y2) - 1e-6 <= y <= max(y1, y2) + 1e-6 and
+        min(x3, x4) - 1e-6 <= x <= max(x3, x4) + 1e-6 and
+        min(y3, y4) - 1e-6 <= y <= max(y3, y4) + 1e-6):
+        return (x, y)
+    else:
+        return None
+
+
 def find_intersected_lines(target_line, lines):
     intersected_indices = []
+    intersection_points = []
 
     for idx, line in enumerate(lines):
         if do_intersect(target_line, line):
             intersected_indices.append(idx)
+            intersection_points.append(find_intersection_point(target_line, line))
 
-    return intersected_indices
+    return intersected_indices, intersection_points
