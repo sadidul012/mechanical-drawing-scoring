@@ -3,6 +3,10 @@ from title_block import *
 from scipy.spatial import distance_matrix
 
 
+y_index_titles = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+x_index_titles = ["A", "B", "C", "D", "E", "F", "G", "H", "I"]
+
+
 def detect_points(points, threshold=10, close_n=3):
     try:
         dists = distance_matrix(points, points)
@@ -35,8 +39,8 @@ def detect_borders_with_contours(contours, sorted_indices):
 def detect_borders(contours, sorted_indices, words):
     cbb_1, cbb_2 = detect_borders_with_contours(contours, sorted_indices)
 
-    point_y_1, point_y_2 = detect_points(words.loc[words.value.isin(["1", "2", "3", "4", "5", "6", "7", "8"])][["y1", "y2"]].astype(int))
-    point_x_1, point_x_2 = detect_points(words.loc[words.value.isin(["A", "B", "C", "D", "F", "G", "H", "I"])][["x1", "x2"]].astype(int))
+    point_y_1, point_y_2 = detect_points(words.loc[words.value.isin(y_index_titles)][["y1", "y2"]].astype(int))
+    point_x_1, point_x_2 = detect_points(words.loc[words.value.isin(x_index_titles)][["x1", "x2"]].astype(int))
 
 
     if point_x_1 is None or point_y_1 is None or point_x_2 is None or point_y_2 is None:
@@ -251,9 +255,13 @@ def detect_intersected_texts(words, boundary_lines, boundary_title_block_lines):
     words_copy = words.copy()
 
     words_copy = words_copy.loc[
-        (words.x1 < boundary_title_block_lines[1][0])  # left
-        | (words.y1 < boundary_title_block_lines[0][1])  # left
-        ]
+        words.value.isin(x_index_titles) &
+        words.value.isin(y_index_titles) &
+        (
+            (words.x1 < boundary_title_block_lines[1][0])  # left
+            | (words.y1 < boundary_title_block_lines[0][1])  # left
+        )
+    ]
     words_copy = words_copy.loc[
         (words.x1 < boundary_lines[3][0]) & (words.x2 > boundary_lines[3][2])  # left
         | (words.x1 < boundary_lines[2][0]) & (words.x2 > boundary_lines[2][2])  # right
