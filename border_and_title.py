@@ -255,8 +255,8 @@ def detect_intersected_texts(words, boundary_lines, boundary_title_block_lines):
     words_copy = words.copy()
 
     words_copy = words_copy.loc[
-        words.value.isin(x_index_titles) &
-        words.value.isin(y_index_titles) &
+        ~words.value.isin(x_index_titles) &
+        ~words.value.isin(y_index_titles) &
         (
             (words.x1 < boundary_title_block_lines[1][0])  # left
             | (words.y1 < boundary_title_block_lines[0][1])  # left

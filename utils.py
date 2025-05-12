@@ -88,6 +88,11 @@ def random_rgb_color():
   return r, g, b
 
 
+def calculate_line_length(line):
+    x1, y1, x2, y2 = line
+    return np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+
+
 def calculate_total_length(lines):
     lines = np.array(lines)
     x1, y1, x2, y2 = lines[:, 0], lines[:, 1], lines[:, 2], lines[:, 3]
