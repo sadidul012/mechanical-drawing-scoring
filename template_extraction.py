@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from skimage.metrics import structural_similarity
 
-from utils import calculate_line_length, remove_similar_lines
+from utils import remove_similar_lines
 
 
 def find_common_region(images, threshold_value=30):

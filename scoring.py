@@ -1,38 +1,5 @@
 import cv2
 import numpy as np
-from imutils import resize
-import random
-
-
-random.seed(42)
-
-
-def random_rgb_color():
-  """Generates a random RGB color as a tuple of integers (0-255)."""
-  r = random.randint(0, 255)
-  g = random.randint(0, 255)
-  b = random.randint(0, 255)
-
-  return r, g, b
-
-
-def im_resize(img, size=1500):
-    height, width = img.shape[:2]
-
-    if height * width > 59478485:
-        scale_percent = 50
-        new_width = int(width * scale_percent / 100)
-        new_height = int(height * scale_percent / 100)
-        img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
-
-    longer = np.argmax(img.shape)
-
-    if longer == 0:
-        img = resize(img, size)
-    else:
-        img = resize(img, height=size)
-
-    return img
 
 
 def detect_objects(img):
