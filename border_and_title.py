@@ -141,6 +141,31 @@ def find_connected_lines_recursive(target_line, lines, tolerance=5):
     return list(visited)
 
 
+def detect_intersection_with_boundary(lines, boundary, tolerance=10):
+    (x1, y1), (x2, y2) = boundary.copy()
+    y2 += tolerance
+    y1 -= tolerance
+    x2 -= tolerance
+    x1 += tolerance
+
+    boundary_lines = [
+        [x1, y2, x2, y2],  # Top
+        [x1, y1, x2, y1],  # Bottom
+        [x2, y2, x2, y1],  # Right
+        [x1, y2, x1, y1],  # Left
+    ]
+    drawings = lines.copy()
+    intersection_points = []
+    intersection_lines = []
+
+    for line in boundary_lines:
+        intersected_lines, intersected_at = find_intersected_lines(line, drawings)
+        intersection_points.extend(intersected_at)
+        intersection_lines.extend(intersected_lines)
+
+    return intersection_lines, intersection_points
+
+
 def detect_intersection_with_borders(img, boundary, title_boundary, return_states=False):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, 50, 150, apertureSize=3)

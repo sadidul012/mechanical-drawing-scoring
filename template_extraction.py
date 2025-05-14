@@ -2,7 +2,8 @@ import cv2
 import numpy as np
 from skimage.metrics import structural_similarity
 
-from utils import remove_similar_lines
+from border_and_title import detect_intersection_with_boundary
+from utils import remove_similar_lines, find_intersected_lines
 
 
 def find_common_region(images, threshold_value=30):
@@ -115,3 +116,80 @@ def get_template_borders_from_structures(structures):
         borders = np.vstack([borders, top_horizontal_borders])
 
     return borders, template
+
+
+def detect_intersection_with_template(img, boundary, borders, tolerance=10):
+    im_h, im_w, _ = img.shape
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+    lines = cv2.HoughLinesP(
+        edges,
+        rho=1,
+        theta=np.pi / 180,
+        threshold=100,
+        minLineLength=50,
+        maxLineGap=10
+    )
+    lines = remove_similar_lines(lines)
+
+    template_boundaries = borders.copy()
+    template_boundaries[(template_boundaries[:, 1] > int((im_h * 70) / 100)) & (
+                template_boundaries[:, 3] > int((im_h * 70) / 100)), 3] = boundary[0][1]
+    template_boundaries[(template_boundaries[:, 2] > int((im_h * 85) / 100)), 2] = boundary[1][0]
+    template_boundaries[(template_boundaries[:, 0] < int((im_h * 15) / 100)), 0] = boundary[0][0]
+    template_boundaries[(template_boundaries[:, 1] < int((im_h * 30) / 100)) & (
+                template_boundaries[:, 3] < int((im_h * 30) / 100)), 1] = boundary[1][1]
+
+    template_lines = []
+    drawings = lines.copy()
+
+    (x1, y1), (x2, y2) = boundary
+    left = min(x1, x2)
+    right = max(x1, x2)
+    top = min(y1, y2)
+    bottom = max(y1, y2)
+
+    drawings = drawings[
+        ~((drawings[:, 1] <= top + tolerance) & (drawings[:, 3] <= top + tolerance))
+        & ~((drawings[:, 1] >= bottom - tolerance) & (drawings[:, 3] >= bottom - tolerance))
+        & ~((drawings[:, 0] <= left + tolerance) & (drawings[:, 2] <= left + tolerance))
+        & ~((drawings[:, 0] > right - tolerance) & (drawings[:, 2] > right - tolerance))
+        ]
+
+    for b in template_boundaries:
+        x1, y1, x2, y2 = b
+
+        left = min(x1, x2)
+        right = max(x1, x2)
+        top = min(y1, y2)
+        bottom = max(y1, y2)
+
+        boundary_title_block_lines = [
+            [left, top, right, top],  # Top
+            [left, bottom, left, top],  # Left
+            [right, bottom, right, top],  # Right
+            [left, bottom, right, bottom],  # Bottom
+        ]
+        template_lines.extend(boundary_title_block_lines)
+
+        drawings = drawings[
+            ~(
+                    (drawings[:, 1] >= top - tolerance)
+                    & (drawings[:, 3] >= top - tolerance)
+                    & (drawings[:, 0] >= left - tolerance)
+                    & (drawings[:, 2] >= left - tolerance)
+                    & (drawings[:, 3] <= bottom + tolerance)
+                    & (drawings[:, 1] <= bottom + tolerance)
+                    & (drawings[:, 2] <= right + tolerance)
+                    & (drawings[:, 0] <= right + tolerance)
+            )
+        ]
+
+    intersection_lines, intersection_points = detect_intersection_with_boundary(drawings, boundary, tolerance=10)
+
+    for line in template_lines:
+        intersected_lines, intersected_at = find_intersected_lines(line, drawings)
+        intersection_points.extend(intersected_at)
+        intersection_lines.extend(intersected_lines)
+
+    return template_lines, intersection_lines, intersection_points
