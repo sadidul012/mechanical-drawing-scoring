@@ -118,7 +118,7 @@ def get_template_borders_from_structures(structures):
     return borders, template
 
 
-def detect_intersection_with_template(img, boundary, borders, tolerance=10):
+def detect_intersection_with_template(img, boundary, borders, words, x_index_titles, y_index_titles, tolerance=10):
     im_h, im_w, _ = img.shape
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, 50, 150, apertureSize=3)
@@ -142,6 +142,7 @@ def detect_intersection_with_template(img, boundary, borders, tolerance=10):
 
     template_lines = []
     drawings = lines.copy()
+    intersected_words = words.copy()
 
     (x1, y1), (x2, y2) = boundary
     left = min(x1, x2)
@@ -149,12 +150,31 @@ def detect_intersection_with_template(img, boundary, borders, tolerance=10):
     top = min(y1, y2)
     bottom = max(y1, y2)
 
+    boundary_lines = [
+        [x1, y2, x2, y2],  # Top
+        [x1, y1, x2, y1],  # Bottom
+        [x2, y2, x2, y1],  # Right
+        [x1, y2, x1, y1],  # Left
+    ]
+
     drawings = drawings[
         ~((drawings[:, 1] <= top + tolerance) & (drawings[:, 3] <= top + tolerance))
         & ~((drawings[:, 1] >= bottom - tolerance) & (drawings[:, 3] >= bottom - tolerance))
         & ~((drawings[:, 0] <= left + tolerance) & (drawings[:, 2] <= left + tolerance))
         & ~((drawings[:, 0] > right - tolerance) & (drawings[:, 2] > right - tolerance))
-        ]
+    ]
+
+    intersected_words = intersected_words.loc[
+        ~words.value.isin(x_index_titles) &
+        ~words.value.isin(y_index_titles)
+    ]
+
+    intersected_words = intersected_words.loc[
+        (words.x1 < boundary_lines[3][0]) & (words.x2 > boundary_lines[3][2])  # left
+        | (words.x1 < boundary_lines[2][0]) & (words.x2 > boundary_lines[2][2])  # right
+        | (words.y1 < boundary_lines[1][1]) & (words.y2 > boundary_lines[1][3])  # top
+        | (words.y1 < boundary_lines[0][1]) & (words.y2 > boundary_lines[0][3])  # bottom
+    ]
 
     for b in template_boundaries:
         x1, y1, x2, y2 = b
@@ -185,6 +205,13 @@ def detect_intersection_with_template(img, boundary, borders, tolerance=10):
             )
         ]
 
+        intersected_words = intersected_words.loc[
+            (
+                    (words.x1 < boundary_title_block_lines[1][0])  # left
+                    | (words.y1 < boundary_title_block_lines[0][1])  # left
+            )
+        ]
+
     intersection_lines, intersection_points = detect_intersection_with_boundary(drawings, boundary, tolerance=10)
 
     for line in template_lines:
@@ -192,4 +219,4 @@ def detect_intersection_with_template(img, boundary, borders, tolerance=10):
         intersection_points.extend(intersected_at)
         intersection_lines.extend(intersected_lines)
 
-    return template_lines, intersection_lines, intersection_points
+    return template_lines, intersection_lines, intersection_points, intersected_words

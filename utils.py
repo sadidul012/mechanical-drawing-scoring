@@ -94,16 +94,41 @@ def calculate_area(bb):
 
 
 def find_closest_lines(bx1, by1, bx2, by2, horizontal_lines, vertical_lines, t_dist=200):
-    top = horizontal_lines[(horizontal_lines[:, 1] < by1) & (horizontal_lines[:, 1] > (by1 - t_dist)) & (horizontal_lines[:, 0] < bx1) & (horizontal_lines[:, 2] > bx2)]
-    top = top[top[:, 0].argmin()]
+    horizontal_lines = np.stack([
+        np.minimum(horizontal_lines[:, 0], horizontal_lines[:, 2]),
+        np.minimum(horizontal_lines[:, 1], horizontal_lines[:, 3]),
+        np.maximum(horizontal_lines[:, 0], horizontal_lines[:, 2]),
+        np.maximum(horizontal_lines[:, 1], horizontal_lines[:, 3])
+    ], axis=1)
 
-    bottom = horizontal_lines[(horizontal_lines[:, 1] > by1) & (horizontal_lines[:, 1] < (by1 + t_dist)) & (horizontal_lines[:, 0] < bx1) & (horizontal_lines[:, 2] > bx2)]
+    vertical_lines = np.stack([
+        np.minimum(vertical_lines[:, 0], vertical_lines[:, 2]),
+        np.minimum(vertical_lines[:, 1], vertical_lines[:, 3]),
+        np.maximum(vertical_lines[:, 0], vertical_lines[:, 2]),
+        np.maximum(vertical_lines[:, 1], vertical_lines[:, 3])
+    ], axis=1)
+
+    x = int((bx1 + bx2) / 2)
+    y = int((by1 + by2) / 2)
+
+    top = horizontal_lines[
+        (horizontal_lines[:, 1] < y) & (horizontal_lines[:, 1] > (y - t_dist)) & (horizontal_lines[:, 0] < x) & (
+                    horizontal_lines[:, 2] > x)]
+    top = top[top[:, 1].argmax()]
+
+    bottom = horizontal_lines[
+        (horizontal_lines[:, 1] > y) & (horizontal_lines[:, 1] < (y + t_dist)) & (horizontal_lines[:, 0] < x) & (
+                    horizontal_lines[:, 2] > x)]
     bottom = bottom[bottom[:, 0].argmax()]
 
-    right = vertical_lines[(vertical_lines[:, 0] > bx1) & (vertical_lines[:, 0] < (bx1 + t_dist)) & (vertical_lines[:, 1] > by1) & (vertical_lines[:, 3] < by2)]
+    right = vertical_lines[
+        (vertical_lines[:, 0] > x) & (vertical_lines[:, 0] < (x + t_dist)) & (vertical_lines[:, 1] < y) & (
+                    vertical_lines[:, 3] > y)]
     right = right[right[:, 0].argmin()]
 
-    left = vertical_lines[(vertical_lines[:, 0] < bx1) & (vertical_lines[:, 0] > (bx1 - t_dist)) & (vertical_lines[:, 1] > by1) & (vertical_lines[:, 3] < by2)]
+    left = vertical_lines[
+        (vertical_lines[:, 0] < bx1) & (vertical_lines[:, 0] > (bx1 - t_dist)) & (vertical_lines[:, 1] < y) & (
+                    vertical_lines[:, 3] > y)]
     left = left[left[:, 0].argmax()]
 
     return np.array([top, bottom, right, left])

@@ -1,7 +1,11 @@
+from itertools import combinations
+
 import cv2
 import pandas as pd
 import torch
 from doctr.models import ocr_predictor
+from shapely import box
+
 from utils import *
 
 ocr_model = ocr_predictor('db_resnet50', 'crnn_vgg16_bn', pretrained=True)
@@ -259,3 +263,79 @@ def get_title_boundary(boundary, line_90, title_contours, words, im_h):
         pass
 
     return title_boundary
+
+
+def detect_table(img, mask, words):
+    im_h, im_w, _ = img.shape
+
+    straight_lines = cv2.HoughLinesP(mask, 1, np.pi / 180, 15, np.array([]), 50, 10)
+    straight_lines = straight_lines.squeeze(axis=1)
+
+    horizontal_lines = []
+    vertical_lines = []
+
+    for (x1, y1, x2, y2) in straight_lines:
+        if abs(y1 - y2) <= 5:
+            horizontal_lines.append((x1, y1, x2, y2))
+        elif abs(x1 - x2) <= 5:
+            vertical_lines.append((x1, y1, x2, y2))
+
+    horizontal_lines = np.array(horizontal_lines)
+    vertical_lines = np.array(vertical_lines)
+
+    table_lines = []
+
+    for idx, row in words.iterrows():
+        bx1, by1, bx2, by2 = row[["x1", "y1", "x2", "y2"]].astype(int)
+
+        try:
+            closest = find_closest_lines(bx1, by1, bx2, by2, horizontal_lines, vertical_lines, t_dist=200)
+            for c in closest:
+                table_lines.append(c)
+        except ValueError:
+            pass
+
+    lines = np.array(table_lines)
+    horizontal_lines = []
+    vertical_lines = []
+
+    for x1, y1, x2, y2 in lines:
+        if y1 == y2:
+            horizontal_lines.append((y1, min(x1, x2), max(x1, x2)))
+        elif x1 == x2:
+            vertical_lines.append((x1, min(y1, y2), max(y1, y2)))
+
+    horizontal_dict = {}
+    for y, x1, x2 in horizontal_lines:
+        horizontal_dict.setdefault(y, []).append((x1, x2))
+
+    vertical_dict = {}
+    for x, y1, y2 in vertical_lines:
+        vertical_dict.setdefault(x, []).append((y1, y2))
+
+    ys = sorted(horizontal_dict.keys())
+    xs = sorted(vertical_dict.keys())
+
+    rectangles = set()
+
+    for y1, y2 in combinations(ys, 2):
+        for x1, x2 in combinations(xs, 2):
+            top_valid = any(x1 >= h1 and x2 <= h2 for h1, h2 in horizontal_dict[y1])
+            bottom_valid = any(x1 >= h1 and x2 <= h2 for h1, h2 in horizontal_dict[y2])
+
+            left_valid = any(y1 >= v1 and y2 <= v2 for v1, v2 in vertical_dict[x1])
+            right_valid = any(y1 >= v1 and y2 <= v2 for v1, v2 in vertical_dict[x2])
+
+            if top_valid and bottom_valid and left_valid and right_valid:
+                rectangles.add((x1, y1, x2, y2))
+
+    rectangles = sorted(rectangles, key=lambda r: (r[2] - r[0]) * (r[3] - r[1]), reverse=True)
+
+    boxes = [box(min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)) for x1, y1, x2, y2 in rectangles]
+
+    filtered = []
+    for i, b1 in enumerate(boxes):
+        if not any(b2.contains(b1) for j, b2 in enumerate(boxes) if i != j):
+            filtered.append(rectangles[i])
+
+    return filtered
