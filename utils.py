@@ -44,12 +44,14 @@ def im_resize(img, size=1500):
     return img
 
 
-def read_pdf(pdf_path):
-    if pdf_path.endswith('.pdf'):
-        pages = convert_from_path(pdf_path, dpi=300)
+def read_pdf(path):
+    if path.endswith('.pdf'):
+        pages = convert_from_path(path, dpi=300)
         img = np.array(pages[0])
-    elif pdf_path.endswith('.png') or pdf_path.endswith('.jpg') or pdf_path.endswith('.jpeg') or pdf_path.endswith('.bmp'):
-        img = cv2.imread(pdf_path)
+    elif path.endswith('.png') or path.endswith('.jpg') or path.endswith('.jpeg') or path.endswith('.bmp'):
+        img = cv2.imread(path)
+    elif path.endswith('.tif'):
+        img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
     else:
         return None
 

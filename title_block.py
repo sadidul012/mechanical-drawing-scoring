@@ -1,10 +1,11 @@
 from itertools import combinations
 
 import cv2
+import numpy as np
 import pandas as pd
 import torch
 from doctr.models import ocr_predictor
-from shapely import box
+from shapely import box, unary_union
 
 from utils import *
 
@@ -192,7 +193,7 @@ def detect_text_tables(img, words, mask):
     return contours
 
 
-def table_content_score(bb, words):
+def table_content_score(bb, words, return_states=False):
     ratio = 1
     try:
         (cx1, cy1), (cx2, cy2) = bb
@@ -211,14 +212,47 @@ def table_content_score(bb, words):
         elif digits == 0:
             ratio -= 0.5
 
+        if words_in_bb.shape[0] == 0:
+            print(words_in_bb.value)
+
+        if return_states:
+            return ratio, words_in_bb.shape[0]
         return ratio
     except ZeroDivisionError:
         ratio += 0.2
 
+    if return_states:
+        return ratio, 0
+
     return ratio
 
 
-def get_title_boundary(boundary, line_90, title_contours, words, im_h):
+def sanitize_line_90(line_90, boundary):
+    x1, y1, x2, y2 = line_90
+    x1 = boundary[0][0]
+    x2 = boundary[1][0]
+    y2 = max(boundary[0][1], boundary[1][1])
+
+    return x1, y1, x2, y2
+
+
+def sanitize_title_block(bb, boundary):
+    x2 = bb[:, 2].max()
+    x1 = bb[:, 0].min()
+    y1 = bb[:, 1].min()
+
+    if abs(boundary[1][0] - bb[:, 2].max()) < 50:
+        x2 = boundary[1][0]
+
+    if abs(boundary[0][0] - bb[:, 0].min()) < 50:
+        x1 = boundary[0][0]
+
+    y2 = max(boundary[0][1], boundary[1][1])
+
+    return x1, y1, x2, y2
+
+
+def title_contour_to_bb(title_contours, words, im_h):
     bb = []
     for cnt in title_contours:
         x, y, w, h = cv2.boundingRect(cnt)
@@ -237,27 +271,19 @@ def get_title_boundary(boundary, line_90, title_contours, words, im_h):
                 elif y > int((im_h * 80) / 100) and y1 > int((im_h * 90) / 100):
                     bb.append((x, y, x1, y + h))
 
+    return np.array(bb)
+
+
+def get_title_boundary(boundary, line_90, title_contours, words, im_h):
     title_boundary = [[0, 0], [0, 0]]
 
     try:
-        bb = np.array(bb)
+        bb = title_contour_to_bb(title_contours, words, im_h)
 
         if line_90 is not None:
-            x1, y1, x2, y2 = line_90
-            x1 = boundary[0][0]
-            x2 = boundary[1][0]
+            x1, y1, x2, y2 = sanitize_line_90(line_90, boundary)
         else:
-            x2 = bb[:, 2].max()
-            x1 = bb[:, 0].min()
-            y1 = bb[:, 1].min()
-
-            if abs(boundary[1][0] - bb[:, 2].max()) < 50:
-                x2 = boundary[1][0]
-
-            if abs(boundary[0][0] - bb[:, 0].min()) < 50:
-                x1 = boundary[0][0]
-
-        y2 = max(boundary[0][1], boundary[1][1])
+            x1, y1, x2, y2 = sanitize_title_block(bb, boundary)
         title_boundary = [[x1, y1], [x2, y2]]
     except IndexError:
         pass
@@ -331,11 +357,193 @@ def detect_table(img, mask, words):
 
     rectangles = sorted(rectangles, key=lambda r: (r[2] - r[0]) * (r[3] - r[1]), reverse=True)
 
-    boxes = [box(min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)) for x1, y1, x2, y2 in rectangles]
+    # boxes = [box(min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)) for x1, y1, x2, y2 in rectangles]
+    #
+    # filtered = []
+    # for i, b1 in enumerate(boxes):
+    #     if not any(b2.contains(b1) for j, b2 in enumerate(boxes) if i != j):
+    #         filtered.append(rectangles[i])
+
+    return remove_child_bb(rectangles)
+
+
+def detect_text_area(words, tables, boundary, im_w, im_h):
+    # word_lines = words.copy().drop_duplicates(subset=["line_idx"])
+    #
+    # word_lines["line_geometry"] = word_lines.line_geometry.apply(
+    #     lambda x: {"lx1": x[0][0], "ly1": x[0][1], "lx2": x[1][0], "ly2": x[1][1]}
+    # )
+    # word_lines = word_lines.join(pd.json_normalize(word_lines.pop('line_geometry')))
+    #
+    # word_lines["lx1"] = word_lines["lx1"] * im_w
+    # word_lines["lx2"] = word_lines["lx2"] * im_w
+    # word_lines["ly1"] = word_lines["ly1"] * im_h
+    # word_lines["ly2"] = word_lines["ly2"] * im_h
+    #
+    # # word_lines = word_lines.loc[~word_lines.lx1.isna()]
+    # mask = ~word_lines["lx1"].isna()
+    # word_lines.loc[mask, ["x1", "y1", "x2", "y2"]] = word_lines.loc[mask, ["lx1", "ly1", "lx2", "ly2"]].values
+    #
+    # words = word_lines
+
+    height = abs(words["y1"] - words["y2"])
+    word_boxes = words[["x1", "y1", "x2", "y2"]].loc[height < 50.0].astype(int).values
+
+    boxes = [
+        box(x1, y1, x2, y2)
+        for x1, y1, x2, y2 in word_boxes
+        if abs(x2 - x1) > 0 and abs(y2 - y1) > 0
+    ]
+    merged = unary_union(boxes)
+
+    if merged.geom_type == 'Polygon':
+        merged = [merged]
+    elif merged.geom_type == 'MultiPolygon':
+        merged = list(merged.geoms)
+
+    merged_rects = [b.bounds for b in merged]
+    merged_rects_sorted = sorted(merged_rects, key=lambda r: (r[0], r[1]))
+
+    text_areas = []
+    for rect in merged_rects_sorted:
+        x1, y1, x2, y2 = map(int, rect)
+        w, h = abs(x1 - x2), abs(y1 - y2)
+        if abs(x1 - x2) * abs(y1 - y2) > 5000 and w / float(h) > 4:
+            text_areas.append((x1, y1, x2, y2))
+
+    filter_boxes = [box(min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)) for x1, y1, x2, y2 in np.array(tables)]
+
+    filtered_array2 = []
+    for x1, y1, x2, y2 in word_boxes:
+        b = box(min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
+        if not any(fb.contains(b) for fb in filter_boxes):
+            filtered_array2.append((x1, y1, x2, y2))
+
+    name_boxes = words[["x1", "y1", "x2", "y2"]].loc[height > 50.0].astype(int).values
+
+    visited = []
+    line_boxes = []
+    for idx, row in words.iterrows():
+        if row.line_idx not in visited:
+            word_line = words.loc[words.line_idx == row.line_idx]
+            x1, y1, x2, y2 = word_line["x1"].astype(int).min(), word_line["y1"].astype(int).min(), word_line[
+                "x2"].astype(int).max(), word_line["y2"].astype(int).max()
+
+            sentence_words = word_line["value"].shape[0]
+            sentence_chars = len(" ".join(word_line["value"].values))
+            if sentence_words > 3 and sentence_chars > 10:
+                line_boxes.append((x1, y1, x2, y2))
+
+    template_area = np.zeros((0, 4))
+    for t in (text_areas, tables, name_boxes, line_boxes):
+        if len(t) > 0:
+            template_area = np.vstack((template_area, t))
+
+    (x1, y1), (x2, y2) = boundary
+    left = min(x1, x2)
+    right = max(x1, x2)
+    top = min(y1, y2)
+    bottom = max(y1, y2)
+    tolerance = 100
+
+    tight_boxes = []
+    for rect in template_area:
+        x1, y1, x2, y2 = rect.astype(int)
+        # w, h = abs(x1 - x2), abs(y1 - y2)
+        # if w * h > 1000:
+        x_min = min(x1, x2)
+        x_max = max(x1, x2)
+        y_min = min(y1, y2)
+        y_max = max(y1, y2)
+        side_value_change = []
+        if y_min < top + tolerance:
+            y_min = top
+            side_value_change.append(1)
+        if x_min < left + tolerance:
+            x_min = left
+            side_value_change.append(1)
+        if x_max > right - tolerance:
+            x_max = right
+            side_value_change.append(1)
+        if y_max > bottom - tolerance:
+            y_max = bottom
+            side_value_change.append(1)
+
+        if sum(side_value_change) > 0:
+            tight_boxes.append((x_min, y_min, x_max, y_max))
+
+    # boxes = [box(min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)) for x1, y1, x2, y2 in tight_boxes]
+    #
+    # filtered = []
+    # for i, b1 in enumerate(boxes):
+    #     if not any(b2.contains(b1) for j, b2 in enumerate(boxes) if i != j):
+    #         filtered.append(tight_boxes[i])
+    return remove_child_bb(tight_boxes)
+
+
+def remove_child_bb(tight_boxes):
+    boxes = [box(min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)) for x1, y1, x2, y2 in tight_boxes]
 
     filtered = []
     for i, b1 in enumerate(boxes):
         if not any(b2.contains(b1) for j, b2 in enumerate(boxes) if i != j):
-            filtered.append(rectangles[i])
+            filtered.append(tight_boxes[i])
 
-    return filtered
+    return np.array(filtered)
+
+
+def detect_boundary_text_block(img, tight_boxes, words, boundary, title_contours, line_90):
+    im_h = img.shape[0]
+    title_boundary = []
+    tight_bs = []
+
+    for i, rect in enumerate(tight_boxes):
+        x1, y1, x2, y2 = rect
+        w, h = abs(x1 - x2), abs(y1 - y2)
+        if 1000 < (w * h) < (np.multiply(img.shape[0], img.shape[1]) * 0.2):
+            tight_bs.append(rect)
+
+    tight_bs = np.array(tight_bs)
+
+    try:
+        bb = title_contour_to_bb(title_contours, words, im_h)
+        if line_90 is not None:
+            x1, y1, x2, y2 = sanitize_line_90(line_90, boundary)
+            title_boundary.append([x1, y1, x2, y2])
+            tight_bs = tight_bs[(tight_bs[:, 1] <= y1) & (tight_bs[:, 3] <= y2)]
+        elif len(tight_bs) == 0:
+            x1, y1, x2, y2 = sanitize_title_block(bb, boundary)
+            title_boundary.append([x1, y1, x2, y2])
+    except IndexError:
+        pass
+
+    if len(tight_bs) == 0:
+        tight_bs = title_boundary
+    elif len(title_boundary) > 0:
+        tight_bs = np.vstack((tight_bs, title_boundary))
+
+    final_tb = []
+    for i, rect in enumerate(tight_bs):
+        x1, y1, x2, y2 = rect
+        w, h = abs(x1 - x2), abs(y1 - y2)
+        # content_score = table_content_score(((x1, y1), (x2, y2)), words)
+        if 5000 < w * h < np.multiply(img.shape[0], img.shape[1]) * 0.2:
+        # if content_score < 1 and 5000 < w * h < np.multiply(img.shape[0], img.shape[1]) * 0.2:
+            final_tb.append((x1, y1, x2, y2))
+
+    border_lines = []
+    for tight_box in final_tb:
+        x1, y1, x2, y2 = tight_box
+
+        left = min(x1, x2)
+        right = max(x1, x2)
+        top = min(y1, y2)
+        bottom = max(y1, y2)
+        border_lines.extend([
+            [left, top, right, top],  # Top
+            [left, bottom, left, top],  # Left
+            [right, bottom, right, top],  # Right
+            [left, bottom, right, bottom],  # Bottom
+        ])
+
+    return np.array(final_tb), np.array(border_lines)

@@ -91,20 +91,15 @@ def keep_top_below_line(lines, threshold=10):
     return np.array(kept_lines)
 
 
-def get_template_borders_from_structures(structures):
-    template, common_mask = find_common_region(structures)
-    template_height, template_width = template.shape[:2]
-    straight_lines = cv2.HoughLinesP(template, 1, np.pi / 180, 15, np.array([]), 50, 10)
-    straight_lines = straight_lines.squeeze(axis=1)
-
+def get_border_lines(straight_lines, template_height):
     bottom_horizontal_lines = straight_lines[(straight_lines[:, 1] > int((template_height * 70) / 100)) & (
-                straight_lines[:, 3] > int((template_height * 70) / 100))]
+            straight_lines[:, 3] > int((template_height * 70) / 100))]
     bottom_horizontal_lines = remove_similar_lines(
         bottom_horizontal_lines[abs(bottom_horizontal_lines[:, 1] - bottom_horizontal_lines[:, 3]) == 0])
     horizontal_bottom_borders = select_bottom_top_lines(bottom_horizontal_lines)
 
     top_horizontal_lines = straight_lines[(straight_lines[:, 1] < int((template_height * 30) / 100)) & (
-                straight_lines[:, 3] < int((template_height * 30) / 100))]
+            straight_lines[:, 3] < int((template_height * 30) / 100))]
     top_horizontal_lines = remove_similar_lines(
         top_horizontal_lines[abs(top_horizontal_lines[:, 1] - top_horizontal_lines[:, 3]) == 0])
 
@@ -114,6 +109,17 @@ def get_template_borders_from_structures(structures):
 
     if top_horizontal_borders.shape[0] > 0:
         borders = np.vstack([borders, top_horizontal_borders])
+
+    return borders
+
+
+def get_template_borders_from_structures(structures):
+    template, common_mask = find_common_region(structures)
+    template_height, template_width = template.shape[:2]
+    straight_lines = cv2.HoughLinesP(template, 1, np.pi / 180, 15, np.array([]), 50, 10)
+    straight_lines = straight_lines.squeeze(axis=1)
+
+    borders = get_border_lines(straight_lines, template_height)
 
     return borders, template
 
@@ -207,8 +213,8 @@ def detect_intersection_with_template(img, boundary, borders, words, x_index_tit
 
         intersected_words = intersected_words.loc[
             (
-                    (words.x1 < boundary_title_block_lines[1][0])  # left
-                    | (words.y1 < boundary_title_block_lines[0][1])  # left
+                (words.x1 - tolerance < boundary_title_block_lines[1][0])  # left
+                | (words.y1 - tolerance < boundary_title_block_lines[0][1])  # left
             )
         ]
 
